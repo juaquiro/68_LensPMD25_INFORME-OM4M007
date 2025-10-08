@@ -7,5 +7,5 @@ This project is released under a **non-commercial academic license**. You are fr
 
 **Commercial use is prohibited** without explicit permission.
 
-See [LICENSE-RESEARCH.txt](LICENSE-RESEARCH.txt) for full terms.  
+See [license.txt](license.txt) for full terms.  
 For commercial licensing, please contact: jalonso@iot.es
