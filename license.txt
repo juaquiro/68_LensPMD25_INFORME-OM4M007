@@ -1,0 +1,20 @@
+Copyright (c) 2025 IOT
+
+Permission is hereby granted to use, copy, modify, and distribute this software and its documentation, for **non-commercial and academic research purposes only**, provided that:
+
+1. Proper attribution is given to the original author(s) in any publications or derivative works.
+2. This license and copyright notice are included in all copies or substantial portions of the Software.
+3. Any modifications are clearly documented.
+
+**Commercial use is strictly prohibited without prior written permission from the author.** This includes, but is not limited to:
+- Use in commercial products or services
+- Use in proprietary systems
+- Any use with the purpose of financial gain
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+For commercial licensing inquiries, please contact:
+
+AQ  
+jalonso@iot.es  
+IOT
