@@ -25,6 +25,7 @@ IFS=$'\n\t'
 
 ### EDIT YOUR DROPBOX LINK HERE ###############################################
 
+### link to  AQ_EXP\DataSetsForTesting\LENSPMD veryfy using a browser
 DROPBOX_URL="https://www.dropbox.com/scl/fo/355qvjig3ms2vb6ctidwo/AJXghl7xS4ksMuatImMRIhY?rlkey=lcvp67tozo0jjppuk64lf5kwu&dl=0"  # <- Replace this!
 
 if [[ "$DROPBOX_URL" == *"<share-id>"* ]]; then
