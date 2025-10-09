@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # download_dropbox_directory.sh – Download every file from a public Dropbox
-# *folder* link into a fresh local ./data directory.
+# *folder* link into a fresh local ./local_data directory.
 #
 # CONFIGURATION ---------------------------------------------------------------
 # 1. Copy the public ("Can view") **folder** link from Dropbox:
@@ -25,7 +25,7 @@ IFS=$'\n\t'
 
 ### EDIT YOUR DROPBOX LINK HERE ###############################################
 
-DROPBOX_URL="https://www.dropbox.com/scl/fo/09zjep2mjrye6f9spk4c5/APQm7LT1Bdb5gzchXlcM0NA?rlkey=h3equ0neonr1aeg3mryjk0e6z&dl=0"  # <- Replace this!
+DROPBOX_URL="https://www.dropbox.com/scl/fo/355qvjig3ms2vb6ctidwo/AJXghl7xS4ksMuatImMRIhY?rlkey=lcvp67tozo0jjppuk64lf5kwu&dl=0"  # <- Replace this!
 
 if [[ "$DROPBOX_URL" == *"<share-id>"* ]]; then
   echo "❌  DROPBOX_URL is still the placeholder – please edit the script and paste your real folder link." >&2
@@ -34,7 +34,7 @@ fi
 
 ### Destination directory #####################################################
 
-DEST_DIR="data"
+DEST_DIR="local_data"
 
 # Start with a clean destination
 if [[ -d "$DEST_DIR" ]]; then

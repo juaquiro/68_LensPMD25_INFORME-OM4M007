@@ -1,6 +1,7 @@
 # data for examples that downloads from dropbos see download_data.sh
 
-data/**
+# Ignore large local data directory
+local_data/**
 
 
 # MATLAB #
