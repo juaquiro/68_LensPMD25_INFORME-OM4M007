@@ -1,8 +1,14 @@
-# data for examples that downloads from dropbos see download_data.sh
+# data for examples that downloads from dropbox see download_data.sh
 
 # Ignore large local data directory
 local_data/**
 
+# secrets
+.gitcredentials
+*.pem
+*.p12
+*.key
+.env
 
 # MATLAB #
 ###################
