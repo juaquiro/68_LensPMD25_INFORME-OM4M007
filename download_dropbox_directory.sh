@@ -25,8 +25,9 @@ IFS=$'\n\t'
 
 ### EDIT YOUR DROPBOX LINK HERE ###############################################
 
-### link to  AQ_EXP\DataSetsForTesting\LENSPMD veryfy using a browser
-DROPBOX_URL="https://www.dropbox.com/scl/fo/355qvjig3ms2vb6ctidwo/AJXghl7xS4ksMuatImMRIhY?rlkey=lcvp67tozo0jjppuk64lf5kwu&dl=0"  # <- Replace this!
+### link to  AQ_EXP\DataSetsForTesting\LENSPMD\68_LensPMD25_INFORME-OM4M007 veryfy using a browser
+
+DROPBOX_URL="https://www.dropbox.com/scl/fo/ja05jpalecf26fo6uq10q/AHVFC1nRBQEMO1EmuNNeYj4?rlkey=x4xw702lhenr8psoxzg52dzt5&dl=0"  # <- Replace this!
 
 if [[ "$DROPBOX_URL" == *"<share-id>"* ]]; then
   echo "❌  DROPBOX_URL is still the placeholder – please edit the script and paste your real folder link." >&2
