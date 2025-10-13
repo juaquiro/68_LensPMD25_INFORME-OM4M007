@@ -47,7 +47,7 @@ trainingSetsDB=fullfile(rootFolderDB, trainingSetsDBName) ;
 trainingSetsTb = readtable(trainingSetsDB, 'Sheet', 'Sheet1', 'ReadVariableNames', true, 'Format', 'auto');
 
 % select trained model from DB
-trainingSet_Idx=7;
+trainingSet_Idx=15;
 trainedModelFileName=trainingSetsTb.trainedModel{trainingSet_Idx};       
 rootModelFolder="..\local_data\ML_Models";
 trainedModelFileName=fullfile(rootModelFolder, trainedModelFileName);
