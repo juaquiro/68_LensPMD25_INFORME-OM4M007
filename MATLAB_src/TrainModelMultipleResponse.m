@@ -12,14 +12,14 @@ clear all
 TRAIN_MODEL=true;
 % if there is already a trained model or if we do not want to save the
 % trained modes
-SAVE_MODEL=false;
-trainingSet_Idx=7;
+SAVE_MODEL=true;
+trainingSet_Idx=15;
 
 
 %% load data
 
 %root dir for DB (the files)
-rootFolderDB="..\ML_Models";%root dir for DB (the files)
+rootFolderDB="..\local_data\ML_Models";%root dir for DB (the files)
 trainingSetsDBName = 'DB-trainingSets-OM4M007.xlsx';
 
 trainingSetsDB=fullfile(rootFolderDB, trainingSetsDBName) ;
@@ -39,6 +39,9 @@ dateTimeObject.Format = 'dd-MMM-yyyy';
 DB_info.date = string(dateTimeObject);  % ["28-Aug-2025"]
 
 DB_info.featureDBFileName=trainingSetsTb.featureDBFileName{trainingSet_Idx};
+
+%show info
+disp(DB_info)
 
 % Load samples as a table
 fileDB=fullfile(rootFolderDB, DB_info.featureDBFileName);
@@ -104,10 +107,9 @@ if TRAIN_MODEL
         'IterationLimit', 1000, ...
         'Standardize', true);
 else %LOAD_TRAINED_MODEL
-    %trainedModelFileName="trainedModel_w_wx_wy_theta_feature_projected_DFT_13x13_GVN-0_NS-15000_28-Aug-2025";
     trainedModelFileName=trainingSetsTb.trainedModel{trainingSet_Idx};                          
 
-    rootModelFolder="..\ML_Models";
+    rootModelFolder="..\local_data\ML_Models";
     trainedModelFileName=fullfile(rootModelFolder, trainedModelFileName);
 
     S=load(trainedModelFileName);
@@ -195,7 +197,7 @@ for n=1:length(responseNameList)
 
 end
 
-%% Package a "trainedModel" struct similar to Regression Learner exports
+%% Package a "trainedModel" struct similar to Regression Learner App exports
 
 if TRAIN_MODEL
 

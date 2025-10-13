@@ -9,11 +9,18 @@ close all
 %% Params
 
 SAVE_TRAINING_DATA_TO_DB=true;
-RANDOM_FRINGE_MODULATION=true;
+RANDOM_FRINGE_MODULATION=false; % generation mode for modulation of fringe blocks 
+
+% Random genneration parameters
+NS=13001; %tamaño conjunto entrenamiento metodo random de generacion de spatial freqs
+
+%equispaced generation parameters
+Dffx=0.1; % x freq spacing in fringes/field
+Dffy=0.1; % y freq spacing in fringes/field
 
 % tamaño de los parches
-NR=15; %rows px
-NC=15; %cols px
+NR=13; %rows px
+NC=13; %cols px
 [x,y]=meshgrid(1:NC, 1:NR);
 x0=floor(NC/2)+1; y0=floor(NR/2)+1; %image center
 x=x-x0; y=y-y0;
@@ -40,8 +47,6 @@ metodoSeleccionFreqs='random';
 %spatial freqs
 switch metodoSeleccionFreqs
     case 'random'
-        NS=1000; %tamaño conjunto entrenamiento metodo random de generacion de spatial freqs
-
         w=pi*rand(1, NS); %module of spatial frec [0, pi] rad/sample
         theta=pi*(rand(1, NS)-0.5); %fringe orientation, [-pi/2, pi/2]
         wx=w.*cos(theta); % spatial freq x only positive random spatial freqs [0, pi] rad/px
@@ -51,8 +56,6 @@ switch metodoSeleccionFreqs
         ffy=NR*wy/(2*pi); %spatial freq y fringes/field
 
     case 'equispaced'
-        Dffx=0.1; %x freq spacing in fringes/field
-        Dffy=0.1; %x freq spacing in fringes/field
         [ffx, ffy]=meshgrid(0:Dffx:floor(NC/2), -floor(NR/2):Dffy:floor(NR/2)); %spatial freqs in fringes/field
 
         wx=2*pi*ffx/NC; %spatial freq x rad/sample
@@ -134,43 +137,23 @@ GV_noise = rand(NR, NC, NS) * GV_noise_amplitude; %uniform distribution [0, GV_n
 phase_shift=2*pi*rand(1, NS);
 
 hw=waitbar(0);
+
+%stack of NRxNC blocks for paralelle processing
+gBlockList=zeros(NR, NC, NS); %NRxNCxNS
 for ns=1:NS
-    g=uint8(fringe_bkgrd(ns)+fringe_mod(ns)*cos(phase_shift(ns)+x*wx(ns)+y*wy(ns))+GV_noise(:, :, ns));
-    
-
-    % %fringe pattern
-    % hg=figure('Position', [100, 100, 800, 800]); % Set window size;
-    % imshow(g, 'InitialMagnification', 'fit'); % Keep the scaling
-    % str_f = sprintf('period:p=(%0.2f,%0.2f) px, modulation m=%0.2f GV',px(ns), py(ns), fringe_mod(ns));
-    % title(str_f);
-    % set(gca, 'Position', [0.05 0.1 0.9 0.85]); %make room for the title
-    % drawnow;
-    % 
-    % %fourier transform
-    % G=fft2(g); %DFT coeffs NRxNC
-    % G(1,1)=0;
-    % hG=figure('Position', [100, 100, 800, 800]); % Set window size;
-    % imagesc(FT_axes_ffx, FT_axes_ffy, abs(fftshift(G))); % Keep the scaling
-    % str_f = sprintf('statial freq: w=(%0.2f,%0.2f) ff, modulation m=%0.2f GV',ffx(ns), ffy(ns), fringe_mod(ns));
-    % title(str_f);
-    % %set(gca, 'Position', [0.05 0.1 0.9 0.85]); %make room for the title
-    % drawnow;
-
-
-    % calculate features
-    for ft=1:length(featureNameList)
-        featureVectorList{ns, ft}=calcFeature(g, featureNameList{ft});
-    end
-
-
-
-
-    waitbar(ns/NS, hw, 'calculando features')
-
-    %pause()
-    % close(hg);
-    % close(hG);
+    gBlockList(:, :, ns)=uint8(fringe_bkgrd(ns)+fringe_mod(ns)*cos(phase_shift(ns)+x*wx(ns)+y*wy(ns))+GV_noise(:, :, ns));
 end
+    
+% calculate features from stack gBlockList
+for ft=1:length(featureNameList)
+    XBlockList=calcFeatureBatch(gBlockList, featureNameList{ft});
+
+    for ns=1:NS
+        featureVectorList{ns, ft}=XBlockList(ns, :);
+    end
+end
+
+waitbar(ns/NS, hw, 'calculando features')
 close(hw)
 
 %% prepare DB representation as a table object
@@ -188,10 +171,10 @@ end
 
 %save features to excel files
 
- % ft == feature type
- hw=waitbar(0, 'creando DBs');
- training_data_feature_tb_List=cell(1, length(featureNameList));
- training_data_Params_tb=table(NR, NC, GV_noise_amplitude,...
+% ft == feature type
+hw=waitbar(0, 'creando DBs');
+training_data_feature_tb_List=cell(1, length(featureNameList));
+training_data_Params_tb=table(NR, NC, GV_noise_amplitude,...
          GV_max, GV_min, fringe_mod_min, string(metodoSeleccionFreqs), NS, ...
          'VariableNames', ["NR", "NC", "GV_noise_amplitude",...
          "GV_max", "GV_min", "fringe_mod_min", "metodoSeleccionFreqs", "NS"]);
