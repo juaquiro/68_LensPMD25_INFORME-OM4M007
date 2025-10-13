@@ -1,0 +1,364 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html>
+<head>
+<META http-equiv="Content-Type" content="text/html; charset=UTF-8">
+<!--
+This HTML was auto-generated from MATLAB code.
+To make changes, update the MATLAB code and republish this document.
+      -->
+<title>This script verifies a previously trained model created with TrainModelMultipleResponse</title>
+<meta name="generator" content="MATLAB 25.1">
+<link rel="schema.DC" href="http://purl.org/dc/elements/1.1/">
+<meta name="DC.date" content="2025-10-07">
+<meta name="DC.source" content="testMultipleResponsesPredictUsingML.m">
+<style type="text/css">
+html,body,div,span,applet,object,iframe,h1,h2,h3,h4,h5,h6,p,blockquote,pre,a,abbr,acronym,address,big,cite,code,del,dfn,em,font,img,ins,kbd,q,s,samp,small,strike,strong,tt,var,b,u,i,center,dl,dt,dd,ol,ul,li,fieldset,form,label,legend,table,caption,tbody,tfoot,thead,tr,th,td{margin:0;padding:0;border:0;outline:0;font-size:100%;vertical-align:baseline;background:transparent}body{line-height:1}ol,ul{list-style:none}blockquote,q{quotes:none}blockquote:before,blockquote:after,q:before,q:after{content:'';content:none}:focus{outine:0}ins{text-decoration:none}del{text-decoration:line-through}table{border-collapse:collapse;border-spacing:0}
+
+html { min-height:100%; margin-bottom:1px; }
+html body { height:100%; margin:0px; font-family:Arial, Helvetica, sans-serif; font-size:10px; color:#000; line-height:140%; background:#fff none; overflow-y:scroll; }
+html body td { vertical-align:top; text-align:left; }
+
+h1 { padding:0px; margin:0px 0px 25px; font-family:Arial, Helvetica, sans-serif; font-size:1.5em; color:#d55000; line-height:100%; font-weight:normal; }
+h2 { padding:0px; margin:0px 0px 8px; font-family:Arial, Helvetica, sans-serif; font-size:1.2em; color:#000; font-weight:bold; line-height:140%; border-bottom:1px solid #d6d4d4; display:block; }
+h3 { padding:0px; margin:0px 0px 5px; font-family:Arial, Helvetica, sans-serif; font-size:1.1em; color:#000; font-weight:bold; line-height:140%; }
+
+a { color:#005fce; text-decoration:none; }
+a:hover { color:#005fce; text-decoration:underline; }
+a:visited { color:#004aa0; text-decoration:none; }
+
+p { padding:0px; margin:0px 0px 20px; }
+img { padding:0px; margin:0px 0px 20px; border:none; }
+p img, pre img, tt img, li img, h1 img, h2 img { margin-bottom:0px; }
+
+ul { padding:0px; margin:0px 0px 20px 23px; list-style:square; }
+ul li { padding:0px; margin:0px 0px 7px 0px; }
+ul li ul { padding:5px 0px 0px; margin:0px 0px 7px 23px; }
+ul li ol li { list-style:decimal; }
+ol { padding:0px; margin:0px 0px 20px 0px; list-style:decimal; }
+ol li { padding:0px; margin:0px 0px 7px 23px; list-style-type:decimal; }
+ol li ol { padding:5px 0px 0px; margin:0px 0px 7px 0px; }
+ol li ol li { list-style-type:lower-alpha; }
+ol li ul { padding-top:7px; }
+ol li ul li { list-style:square; }
+
+.content { font-size:1.2em; line-height:140%; padding: 20px; }
+
+pre, code { font-size:12px; }
+tt { font-size: 1.2em; }
+pre { margin:0px 0px 20px; }
+pre.codeinput { padding:10px; border:1px solid #d3d3d3; background:#f7f7f7; }
+pre.codeoutput { padding:10px 11px; margin:0px 0px 20px; color:#4c4c4c; }
+pre.error { color:red; }
+
+@media print { pre.codeinput, pre.codeoutput { word-wrap:break-word; width:100%; } }
+
+span.keyword { color:#0000FF }
+span.comment { color:#228B22 }
+span.string { color:#A020F0 }
+span.untermstring { color:#B20000 }
+span.syscmd { color:#B28C00 }
+span.typesection { color:#A0522D }
+
+.footer { width:auto; padding:10px 0px; margin:25px 0px 0px; border-top:1px dotted #878787; font-size:0.8em; line-height:140%; font-style:italic; color:#878787; text-align:left; float:none; }
+.footer p { margin:0px; }
+.footer a { color:#878787; }
+.footer a:hover { color:#878787; text-decoration:underline; }
+.footer a:visited { color:#878787; }
+
+table th { padding:7px 5px; text-align:left; vertical-align:middle; border: 1px solid #d6d4d4; font-weight:bold; }
+table td { padding:7px 5px; text-align:left; vertical-align:top; border:1px solid #d6d4d4; }
+
+
+
+
+
+  </style>
+</head>
+<body>
+<div class="content">
+<h1>This script verifies a previously trained model created with TrainModelMultipleResponse</h1>
+<!--introduction-->
+<pre>(Solo comentarios corregidos/clarificados; el c&oacute;digo permanece igual)</pre>
+<!--/introduction-->
+<h2>Contents</h2>
+<div>
+<ul>
+<li>
+<a href="#1">clear</a>
+</li>
+<li>
+<a href="#2">Parameters</a>
+</li>
+<li>
+<a href="#3">Load trained model</a>
+</li>
+<li>
+<a href="#4">calculate spatial freqs</a>
+</li>
+<li>
+<a href="#5">Plot results</a>
+</li>
+</ul>
+</div>
+<h2 id="1">clear</h2>
+<pre class="codeinput">clear <span class="string">all</span>
+close <span class="string">all</span>
+</pre>
+<h2 id="2">Parameters</h2>
+<pre class="codeinput">
+<span class="comment">%size</span>
+NR=511;
+NC=512;
+<span class="comment">%spatial carrier</span>
+w0_x=pi/4;
+w0_y=pi/4;
+[x,y]=meshgrid(1:NC, 1:NR); x=x-0.5*NC; y=y-0.5*NR;
+<span class="comment">% modulating phase</span>
+p=peaks(NR); p=imresize(p, [NR, NC]);
+
+<span class="comment">%total phase phi</span>
+phi=p + pi/2*x + pi/2*y;
+
+<span class="comment">% rescale</span>
+phi=imresize(phi, 1);
+[NR, NC]=size(phi);
+
+<span class="comment">% generate fringe pattern (8-bit)</span>
+M_ROI=abs(x+1i*y)&lt;0.4*NR;
+<span class="comment">%M_ROI=ones(size(phi));</span>
+g=uint8(M_ROI.*(100+40*cos(phi)+2*randn(size(phi))));
+
+<span class="comment">% ground truth spatial freqs and orientation angle for comparison</span>
+[phi_x, phi_y]=gradient(phi); <span class="comment">%local components of the spatial freqs</span>
+w_phi=abs(phi_x+1i*phi_y); <span class="comment">%local spatial freq</span>
+theta=atan2(-phi_y, phi_x); <span class="comment">% fringe orientation</span>
+</pre>
+<h2 id="3">Load trained model</h2>
+<pre class="codeinput">
+<span class="comment">% Root folder with the DB ioncluding trainingSets and Trained Models</span>
+
+rootFolderDB=<span class="string">"..\ML_Models"</span>;<span class="comment">%root dir for DB (the files)</span>
+trainingSetsDBName = <span class="string">'DB-trainingSets-OM4M007.xlsx'</span>;
+
+trainingSetsDB=fullfile(rootFolderDB, trainingSetsDBName) ;
+
+trainingSetsTb = readtable(trainingSetsDB, <span class="string">'Sheet'</span>, <span class="string">'Sheet1'</span>, <span class="string">'ReadVariableNames'</span>, true, <span class="string">'Format'</span>, <span class="string">'auto'</span>);
+
+<span class="comment">% select trained model from DB</span>
+trainingSet_Idx=7;
+trainedModelFileName=trainingSetsTb.trainedModel{trainingSet_Idx};
+rootModelFolder=<span class="string">"..\ML_Models"</span>;
+trainedModelFileName=fullfile(rootModelFolder, trainedModelFileName);
+sprintf(<span class="string">"Loaded Trained Model: %s"</span>, trainedModelFileName)
+
+S=load(trainedModelFileName);
+featureName=S.trainedModel.DB_info.featureName;
+trainedModel=S.trainedModel;
+</pre>
+<pre class="codeoutput">
+ans = 
+
+    "Loaded Trained Model: ..\ML_Models\trainedModel_w_wx_wy_theta_feature_projected_DFT_13x13_GVN-0_NS-15000_28-Aug-2025.mat"
+
+</pre>
+<h2 id="4">calculate spatial freqs</h2>
+<pre class="codeinput">tic
+[pred_w_phi, pred_phi_x, pred_phi_y, pred_theta, QM, M_proc]=calcSpatialFreqsSupervisedRegressionBatch(g, trainedModel, featureName , M_ROI);
+toc
+</pre>
+<pre class="codeoutput">Elapsed time is 0.914815 seconds.
+</pre>
+<h2 id="5">Plot results</h2>
+<pre class="codeinput">MNan=M_proc./M_proc; <span class="comment">%when MQ==0 MNan=nan</span>
+
+figure(<span class="string">'Name'</span>,<span class="string">'fringe pattern'</span>);
+imagesc(g); colormap <span class="string">gray</span>
+title(<span class="string">'fringe pattern'</span>)
+
+figure(<span class="string">'Name'</span>,<span class="string">'pred \phi_x'</span>);
+imagesc(pred_phi_x.*MNan);
+title(<span class="string">'predicted \phi_x ML'</span>)
+
+figure(<span class="string">'Name'</span>,<span class="string">'&ordm;phi_x'</span>);
+imagesc(phi_x);
+title(<span class="string">'ground truth \phi_x'</span>)
+
+figure(<span class="string">'Name'</span>,<span class="string">'predicted \phi_y'</span>);
+imagesc(pred_phi_y.*MNan);
+title(<span class="string">'predicted \phi_y ML'</span>)
+
+figure(<span class="string">'Name'</span>,<span class="string">'\phi_y'</span>);
+imagesc(phi_y);
+title(<span class="string">'ground truth \phi_y'</span>)
+
+figure(<span class="string">'Name'</span>,<span class="string">'w_\phi'</span>);
+imagesc(pred_w_phi.*MNan);
+title(<span class="string">'predicted w_\phi ML'</span>)
+
+figure(<span class="string">'Name'</span>,<span class="string">'w_\phi'</span>);
+imagesc(w_phi);
+title(<span class="string">'ground truth w_\phi'</span>)
+
+figure(<span class="string">'Name'</span>,<span class="string">'predicted \theta'</span>);
+imagesc(pred_theta.*MNan);
+title(<span class="string">'predicted \theta ML'</span>)
+
+figure(<span class="string">'Name'</span>,<span class="string">'\theta'</span>);
+imagesc(theta);
+title(<span class="string">'predicted \theta'</span>)
+
+
+figure(<span class="string">'Name'</span>,<span class="string">'QM'</span>);
+imagesc(QM);
+title(<span class="string">'Quality Map for ML estimation'</span>)
+
+<span class="comment">% Histograms on valid pixels</span>
+histEdge1=linspace(-pi, pi, 100);
+figure; histogram(w_phi(M_proc), histEdge1); title(<span class="string">'hist(w_\phi)'</span>); xlabel(<span class="string">'w_\phi rad/px'</span>)
+figure; histogram(phi_x(M_proc), histEdge1); title(<span class="string">'hist(\theta)'</span>); xlabel(<span class="string">'\theta rad/px'</span>)
+figure; histogram(phi_x(M_proc), histEdge1); title(<span class="string">'hist(\phi_x)'</span>); xlabel(<span class="string">'\phi_x rad/px'</span>)
+figure; histogram(phi_y(M_proc), histEdge1); title(<span class="string">'hist(\phi_y)'</span>); xlabel(<span class="string">'\phi_y rad/px'</span>)
+
+histEdge2=linspace(-pi/10, pi/10, 100);
+figure; histogram(phi_x(M_proc)-pred_phi_x(M_proc), histEdge2); title(<span class="string">'hist(error \phi_x)'</span>); xlabel(<span class="string">'\phi_x rad/px'</span>)
+figure; histogram(phi_y(M_proc)-pred_phi_y(M_proc), histEdge2); title(<span class="string">'hist(error \phi_y)'</span>); xlabel(<span class="string">'\phi_y rad/px'</span>)
+figure; histogram(w_phi(M_proc)-pred_w_phi(M_proc), histEdge2); title(<span class="string">'hist(error w_\phi)'</span>); xlabel(<span class="string">'w_\phi rad/px'</span>)
+figure; histogram(theta(M_proc)-pred_theta(M_proc), histEdge2); title(<span class="string">'hist(error \theta)'</span>); xlabel(<span class="string">'\theta rad/px'</span>)
+</pre>
+<p class="footer">
+<br>
+<a href="https://www.mathworks.com/products/matlab/">Published with MATLAB&reg; R2025a</a>
+<br>
+</p>
+</div>
+<!--
+##### SOURCE BEGIN #####
+%% This script verifies a previously trained model created with TrainModelMultipleResponse
+%  (Solo comentarios corregidos/clarificados; el código permanece igual)
+
+%% clear
+
+clear all
+close all
+
+%% Parameters
+
+%size
+NR=511;
+NC=512;
+%spatial carrier
+w0_x=pi/4;
+w0_y=pi/4;
+[x,y]=meshgrid(1:NC, 1:NR); x=x-0.5*NC; y=y-0.5*NR;
+% modulating phase
+p=peaks(NR); p=imresize(p, [NR, NC]);
+
+%total phase phi
+phi=p + pi/2*x + pi/2*y;
+
+% rescale
+phi=imresize(phi, 1);
+[NR, NC]=size(phi);
+
+% generate fringe pattern (8-bit)
+M_ROI=abs(x+1i*y)<0.4*NR; 
+%M_ROI=ones(size(phi));
+g=uint8(M_ROI.*(100+40*cos(phi)+2*randn(size(phi))));
+
+% ground truth spatial freqs and orientation angle for comparison
+[phi_x, phi_y]=gradient(phi); %local components of the spatial freqs 
+w_phi=abs(phi_x+1i*phi_y); %local spatial freq
+theta=atan2(-phi_y, phi_x); % fringe orientation
+
+%% Load trained model
+
+% Root folder with the DB ioncluding trainingSets and Trained Models 
+
+rootFolderDB="..\ML_Models";%root dir for DB (the files)
+trainingSetsDBName = 'DB-trainingSets-OM4M007.xlsx';
+
+trainingSetsDB=fullfile(rootFolderDB, trainingSetsDBName) ;
+
+trainingSetsTb = readtable(trainingSetsDB, 'Sheet', 'Sheet1', 'ReadVariableNames', true, 'Format', 'auto');
+
+% select trained model from DB
+trainingSet_Idx=7;
+trainedModelFileName=trainingSetsTb.trainedModel{trainingSet_Idx};       
+rootModelFolder="..\ML_Models";
+trainedModelFileName=fullfile(rootModelFolder, trainedModelFileName);
+sprintf("Loaded Trained Model: %s", trainedModelFileName)
+
+S=load(trainedModelFileName);
+featureName=S.trainedModel.DB_info.featureName;
+trainedModel=S.trainedModel;
+
+
+%% calculate spatial freqs
+
+tic
+[pred_w_phi, pred_phi_x, pred_phi_y, pred_theta, QM, M_proc]=calcSpatialFreqsSupervisedRegressionBatch(g, trainedModel, featureName , M_ROI);
+toc
+
+
+%% Plot results
+MNan=M_proc./M_proc; %when MQ==0 MNan=nan
+
+figure('Name','fringe pattern');
+imagesc(g); colormap gray
+title('fringe pattern')
+
+figure('Name','pred \phi_x');
+imagesc(pred_phi_x.*MNan);
+title('predicted \phi_x ML')
+
+figure('Name','ºphi_x');
+imagesc(phi_x);
+title('ground truth \phi_x')
+
+figure('Name','predicted \phi_y');
+imagesc(pred_phi_y.*MNan);
+title('predicted \phi_y ML')
+
+figure('Name','\phi_y');
+imagesc(phi_y);
+title('ground truth \phi_y')
+
+figure('Name','w_\phi');
+imagesc(pred_w_phi.*MNan);
+title('predicted w_\phi ML')
+
+figure('Name','w_\phi');
+imagesc(w_phi);
+title('ground truth w_\phi')
+
+figure('Name','predicted \theta');
+imagesc(pred_theta.*MNan);
+title('predicted \theta ML')
+
+figure('Name','\theta');
+imagesc(theta);
+title('predicted \theta')
+
+
+figure('Name','QM');
+imagesc(QM);
+title('Quality Map for ML estimation')
+
+% Histograms on valid pixels
+histEdge1=linspace(-pi, pi, 100);
+figure; histogram(w_phi(M_proc), histEdge1); title('hist(w_\phi)'); xlabel('w_\phi rad/px')
+figure; histogram(phi_x(M_proc), histEdge1); title('hist(\theta)'); xlabel('\theta rad/px')
+figure; histogram(phi_x(M_proc), histEdge1); title('hist(\phi_x)'); xlabel('\phi_x rad/px')
+figure; histogram(phi_y(M_proc), histEdge1); title('hist(\phi_y)'); xlabel('\phi_y rad/px')
+
+histEdge2=linspace(-pi/10, pi/10, 100);
+figure; histogram(phi_x(M_proc)-pred_phi_x(M_proc), histEdge2); title('hist(error \phi_x)'); xlabel('\phi_x rad/px')
+figure; histogram(phi_y(M_proc)-pred_phi_y(M_proc), histEdge2); title('hist(error \phi_y)'); xlabel('\phi_y rad/px')
+figure; histogram(w_phi(M_proc)-pred_w_phi(M_proc), histEdge2); title('hist(error w_\phi)'); xlabel('w_\phi rad/px')
+figure; histogram(theta(M_proc)-pred_theta(M_proc), histEdge2); title('hist(error \theta)'); xlabel('\theta rad/px')
+
+
+##### SOURCE END #####
+-->
+</body>
+</html>
