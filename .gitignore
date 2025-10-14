@@ -13,6 +13,7 @@ local_data/**
 # MATLAB #
 ###################
 *.asv
+html/**
 
 # Applications
 *.app
