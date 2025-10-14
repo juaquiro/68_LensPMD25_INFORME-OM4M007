@@ -307,17 +307,59 @@ def calc_spatial_freqs_supervised_regression_batch(
 # Synthetic pattern generator (to mirror MATLAB test)
 # -----------------------------
 
-def synth_fringe(NR: int, NC: int, w0_x: float, w0_y: float, phi: float=0.0,
-                 modulation: float=1.0, background: float=0.0, noise_std: float=0.0) -> np.ndarray:
-    '''
+def synth_fringe(
+    NR: int,
+    NC: int,
+    w0_x: float,
+    w0_y: float,
+    psi: float = 0.0,
+    modulation: float = 1.0,
+    background: float = 0.0,
+    noise_std: float = 0.0,
+    return_maps: bool = False,
+):
+    """
     Generate a sinusoidal fringe pattern:
-        g = background + modulation * cos(w0_x * X + w0_y * Y + phi) + noise
-    '''
+        g = background + modulation * cos(w0_x * X + w0_y * Y + psi) + noise
+
+    If return_maps=True, also return:
+        w_phi  = |phi_x + i*phi_y|
+        phi_x  = d(phi)/dx
+        phi_y  = d(phi)/dy
+        theta  = atan2(-phi_y, phi_x)
+    All derivatives use unit pixel spacing.
+    """
+    # pixel coordinates (row-major y, column-major x)
     y, x = np.mgrid[0:NR, 0:NC]
-    g = background + modulation * np.cos(w0_x * x + w0_y * y + phi)
+
+    # total phase
+    phi = w0_x * x + w0_y * y + psi
+
+    # fringe
+    g = background + modulation * np.cos(phi)
     if noise_std > 0:
         g = g + np.random.normal(0, noise_std, size=g.shape)
-    return g.astype(np.float32)
+
+    if not return_maps:
+        return g.astype(np.float32)
+
+    # gradients: numpy returns (d/dy, d/dx)
+    gy, gx = np.gradient(phi)     # gy = dphi/dy, gx = dphi/dx
+    phi_x = gx
+    phi_y = gy
+
+    # local spatial frequency magnitude and fringe orientation
+    w_phi = np.abs(phi_x + 1j * phi_y)
+    theta = np.arctan2(-phi_y, phi_x)
+
+    return (
+        g.astype(np.float32),
+        w_phi.astype(np.float32),
+        phi_x.astype(np.float32),
+        phi_y.astype(np.float32),
+        theta.astype(np.float32),
+    )
+
 
 def peaks(NR: int, NC: int) -> np.ndarray:
     """
