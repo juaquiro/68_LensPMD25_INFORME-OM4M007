@@ -106,7 +106,7 @@ title('predicted \theta')
 
 
 figure('Name','QM');
-imagesc(QM);
+imagesc(QM); colorbar
 title('Quality Map for ML estimation')
 
 % Histograms on valid pixels

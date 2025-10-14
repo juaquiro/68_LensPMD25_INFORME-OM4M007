@@ -59,89 +59,130 @@ def _gaussian_window(N: int, M: int, sigma_y: float=None, sigma_x: float=None) -
     W = np.exp(-0.5*(x**2)/sigma_x**2 - 0.5*(y**2)/sigma_y**2)
     return W
 
-def calc_feature_batch(B: np.ndarray, feature_name: str):
-    '''
+def calc_feature_batch(B: np.ndarray, featureName: str = "feature_projected_DFT"):
+    """
     Vectorized feature extractor for a stack of patches.
-    B: N x M x L stack
-    feature_name: "feature_GV" | "feature_DFT" | "feature_projected_DFT"
-    Returns: X_sel (L x F), and a dict S with some intermediates for debugging
-    '''
-    if B.ndim != 3:
-        raise ValueError("B must be N x M x L")
+
+    Parameters
+    ----------
+    B : (N, M, L) ndarray
+        Each page B[:, :, k] is one patch.
+    featureName : {"feature_GV","feature_DFT","feature_projected_DFT"}
+
+    Returns
+    -------
+    X_sel : (L, F) ndarray
+        Row i is the feature vector of patch i.
+    S : dict
+        Optional intermediates for debugging/inspection.
+    """
+    assert featureName in ("feature_GV", "feature_DFT", "feature_projected_DFT")
+
+    # ----- Sizes and dtype like MATLAB -----
     N, M, L = B.shape
-    # Window
-    W = _gaussian_window(N, M)
-    W3 = np.repeat(W[..., None], L, axis=2)  # N x M x L
+    B = B.astype(np.float64, copy=False)
 
-    # DC removal and windowing
-    mu = B.mean(axis=(0,1), keepdims=True)  # 1 x 1 x L
-    B0 = B - mu
-    Bwin = B0 * W3
+    # ----- Spatial Gaussian window (same as MATLAB code) -----
+    # MATLAB uses 1-based coords and centers at x0 = floor(M/2)+1, y0 = floor(N/2)+1
+    x0 = (M // 2) + 1
+    y0 = (N // 2) + 1
+    # Build 1-based meshgrid to match the MATLAB math
+    xx, yy = np.meshgrid(np.arange(1, M + 1), np.arange(1, N + 1))
+    x = xx - x0
+    y = yy - y0
+    sigma_x = M / 3.0
+    sigma_y = N / 3.0
+    W2 = np.exp(-0.5 * (x ** 2) / (sigma_x ** 2) - 0.5 * (y ** 2) / (sigma_y ** 2))  # (N, M)
+    # Broadcast to (N, M, L)
+    W = np.repeat(W2[:, :, None], L, axis=2)
 
-    # FFT per patch
-    G = np.fft.fft2(Bwin, axes=(0,1))
-    # Remove DC frequency
-    G[0,0,:] = 0.0
-    # Shift for visualization/consistency
-    Gshift = np.fft.fftshift(G, axes=(0,1))
-    absG = np.abs(Gshift)
+    # ----- DC removal (spatial) then apply spatial window -----
+    # MATLAB: mu_sp = mean(B,[1 2]) -> (1,1,L)
+    mu_sp = B.mean(axis=(0, 1), keepdims=True)  # (1,1,L)
+    B0 = B - mu_sp
+    Bwin = B0 * W
 
-    # Normalize per patch to reduce illumination dependence
-    gnorm = absG.reshape(N*M, L).sum(axis=0) + 1e-12
-    absG_norm = absG / gnorm[None, None, :]
+    # ----- FFT per patch, kill DC, center spectrum, low-pass with same W -----
+    # fft over dims (0,1)
+    G = np.fft.fft2(Bwin, axes=(0, 1))
+    G[0, 0, :] = 0.0  # remove DC per patch
+    # center zero-frequency along spatial dims (two fftshift calls in MATLAB)
+    G = np.fft.fftshift(G, axes=(0, 1))
+    # Gaussian low-pass in frequency domain with same W (W2 replicated)
+    G = G * W
 
-    # Basic feature sets
-    if feature_name == "feature_GV":
-        # Simple gradient-based stats (spatial domain)
-        Gy, Gx = np.gradient(Bwin, axis=(0,1))
-        f1 = np.mean(np.abs(Gx), axis=(0,1))
-        f2 = np.mean(np.abs(Gy), axis=(0,1))
-        f3 = np.sqrt(np.mean(Bwin**2, axis=(0,1)))
-        X_sel = np.stack([f1, f2, f3], axis=1)
-        S = {"W": W, "G": None, "absG_norm": None}
-        return X_sel.astype(np.float32), S
+    # ----- Shared quantities for spectral features -----
+    G_abs = np.abs(G)                     # (N, M, L)
+    # MATLAB: GNorm = reshape(sum(sum(G_abs,1),2), [L 1])
+    GNorm = G_abs.sum(axis=(0, 1))[:, None]  # (L,1)
 
-    # For frequency-domain features, collapse along one axis and take spectrum projections
-    proj_x = absG_norm.sum(axis=0)   # M x L
-    proj_y = absG_norm.sum(axis=1)   # N x L
+    # Semiplane wx >= 0 corresponds to columns x0..M in 1-based -> zero-based slice x0-1 : M
+    wx_cols = np.arange(x0 - 1, M)
+    abs_G_sp = G_abs[:, wx_cols, :]       # (N, Wxp, L)
+    Wxp = abs_G_sp.shape[1]               # floor(M/2)+1
 
-    # Peak locations and a few moments as features
-    def peak_and_moments(v2d):
-        # v2d: K x L (K bins per patch)
-        peak_idx = v2d.argmax(axis=0)
-        peak_val = v2d.max(axis=0)
-        # first moment around peak within +/- 3 bins
-        K, Llocal = v2d.shape
-        X = np.arange(K)[:, None]
-        feats = []
-        for i in range(Llocal):
-            p = int(peak_idx[i])
-            lo = max(0, p-3); hi = min(K, p+4)
-            w = v2d[lo:hi, i]
-            x = X[lo:hi]
-            wsum = float(w.sum() + 1e-12)
-            m1 = float((w * x).sum() / wsum)
-            m2 = float(((w * (x - m1)**2).sum()) / wsum)
-            feats.append((float(peak_val[i]), float(p), m1, m2))
-        return np.array(feats, dtype=np.float32)  # L x 4
+    # Decide which wy half to keep: compare energy above vs below y0 in the wx>=0 semiplane
+    # Top means rows 1..(y0-1) in 1-based -> [0 : y0-1) in 0-based
+    sumTop = abs_G_sp[0:(y0 - 1), :, :].sum(axis=(0, 1))[:, None]       # (L,1), wy>0
+    # Bottom means rows (y0+1)..N -> [y0 : N) in 0-based
+    sumBottom = abs_G_sp[y0:, :, :].sum(axis=(0, 1))[:, None]           # (L,1), wy<0
+    isTopGreater = (sumTop > sumBottom).reshape(L)                      # (L,)
 
-    fx = peak_and_moments(proj_x)
-    fy = peak_and_moments(proj_y)
+    # Build two candidates and select per page (exactly like MATLAB)
+    abs1 = abs_G_sp.copy()                  # zero TOP when ~isTopGreater
+    abs1[0:(y0 - 1), :, :] = 0.0
+    abs2 = abs_G_sp.copy()                  # zero BOTTOM when isTopGreater
+    abs2[y0:, :, :] = 0.0
 
-    if feature_name in ("feature_DFT", "feature_normalized_DFT"):
-        X_sel = np.concatenate([fx, fy], axis=1)  # L x 8
-    elif feature_name == "feature_projected_DFT":
-        # Add cross quadrants energy as crude directional info
-        q1 = absG_norm[:N//2, :M//2, :].reshape(-1, L).sum(axis=0)
-        q2 = absG_norm[:N//2, M//2:, :].reshape(-1, L).sum(axis=0)
-        q3 = absG_norm[N//2:, :M//2, :].reshape(-1, L).sum(axis=0)
-        q4 = absG_norm[N//2:, M//2:, :].reshape(-1, L).sum(axis=0)
-        X_sel = np.concatenate([fx, fy, q1[:,None], q2[:,None], q3[:,None], q4[:,None]], axis=1)  # L x 12
-    else:
-        raise ValueError(f"Unknown feature_name: {feature_name}")
+    abs_sel = abs1.copy()
+    # for pages where top is greater, use abs2
+    if L > 0:
+        abs_sel[:, :, isTopGreater] = abs2[:, :, isTopGreater]
 
-    S = {"W": W, "G": None, "absG_norm": absG_norm}
-    return X_sel.astype(np.float32), S
+    eps_ = np.finfo(float).eps
+
+    # ----- Feature assembly -----
+    if featureName == "feature_GV":
+        # muGV = mean(Bwin,[1 2]) -> (L,1); E2 = mean(Bwin.^2,[1 2]) -> (L,1)
+        muGV = Bwin.mean(axis=(0, 1))[:, None]                    # (L,1)
+        E2 = (Bwin ** 2).mean(axis=(0, 1))[:, None]               # (L,1)
+        sigmaGV = np.sqrt(np.maximum(E2 - muGV ** 2, eps_))       # (L,1)
+
+        # Flatten patches: (N*M, L).T -> (L, N*M)
+        X = Bwin.reshape(N * M, L).T                              # (L, N*M)
+        X_sel = (X - muGV) / sigmaGV                              # broadcast (L,1)
+
+    elif featureName == "feature_DFT":
+        # Flatten selected semiplane magnitudes: (N*Wxp, L).T -> (L, N*Wxp)
+        X = abs_sel.reshape(N * Wxp, L).T                         # (L, N*Wxp)
+        X_sel = X / np.maximum(GNorm, eps_)                       # rowwise normalize by GNorm (L,1)
+
+    else:  # "feature_projected_DFT"
+        # X-projection: sum over rows -> (Wxp, L).T -> (L, Wxp)
+        G_sp_XP = abs_sel.sum(axis=0).T                           # (L, Wxp)
+        # Y-projection: sum over cols -> (N, L).T -> (L, N)
+        G_sp_YP = abs_sel.sum(axis=1).T                           # (L, N)
+        X = np.concatenate([G_sp_XP, G_sp_YP], axis=1)            # (L, Wxp+N)
+        X_sel = X / np.maximum(GNorm, eps_)                       # (L, Wxp+N)
+
+    # ----- Optional debug/inspection outputs -----
+    S = {
+        "x0": x0,
+        "y0": y0,
+        "W": W2,                 # one window (all identical across L)
+        "GNorm": GNorm,          # (L,1)
+        "abs_G_sp": abs_G_sp,    # (N, Wxp, L)
+        "abs_sel": abs_sel       # (N, Wxp, L)
+    }
+    if featureName != "feature_GV":
+        try:
+            S["G_sp_XP"] = abs_sel.sum(axis=0).T  # (L, Wxp)
+            S["G_sp_YP"] = abs_sel.sum(axis=1).T  # (L, N)
+        except Exception:
+            S["G_sp_XP"] = None
+            S["G_sp_YP"] = None
+
+    return X_sel.astype(np.float64, copy=False), S
 
 # -----------------------------
 # Regression wrapper similar to calcSpatialFreqsSupervisedRegressionBatch
@@ -277,3 +318,18 @@ def synth_fringe(NR: int, NC: int, w0_x: float, w0_y: float, phi: float=0.0,
     if noise_std > 0:
         g = g + np.random.normal(0, noise_std, size=g.shape)
     return g.astype(np.float32)
+
+def peaks(NR: int, NC: int) -> np.ndarray:
+    """
+    MATLAB-like peaks surface over [-3, 3] × [-3, 3].
+    Returns an array of shape (NR, NC).
+    """
+    ys = np.linspace(-3, 3, NR)
+    xs = np.linspace(-3, 3, NC)
+    Y, X = np.meshgrid(ys, xs, indexing="ij")
+    Z = (
+        3 * (1 - X)**2 * np.exp(-(X**2) - (Y + 1)**2)
+        - 10 * (X/5 - X**3 - Y**5) * np.exp(-X**2 - Y**2)
+        - (1/3) * np.exp(-((X + 1)**2) - Y**2)
+    )
+    return Z
