@@ -285,22 +285,38 @@ def calc_spatial_freqs_supervised_regression_batch(
         Yhat = Yhat[:, None]
 
     # Map back to images
-    w_phi  = np.zeros_like(g, dtype=np.float32)
-    phi_x  = np.zeros_like(g, dtype=np.float32)
-    phi_y  = np.zeros_like(g, dtype=np.float32)
-    theta  = np.zeros_like(g, dtype=np.float32)
-    QM     = np.zeros_like(g, dtype=bool)
+   # Initialize with NaNs (MATLAB: deal(nan(NR,NC)))
+    w_phi = np.full((NR, NC), np.nan, dtype=np.float32)
+    phi_x = np.full((NR, NC), np.nan, dtype=np.float32)
+    phi_y = np.full((NR, NC), np.nan, dtype=np.float32)
+    theta = np.full((NR, NC), np.nan, dtype=np.float32)
+    QM = np.full((NR, NC), np.nan, dtype=np.float32)
 
-    for k in range(L):
-        i = ir[k]; j = jc[k]
-        w_phi[i, j] = float(Yhat[k, 0])
-        if Yhat.shape[1] >= 4:
-            phi_x[i, j] = float(Yhat[k, 1])
-            phi_y[i, j] = float(Yhat[k, 2])
-            theta[i, j] = float(Yhat[k, 3])
-        QM[i, j] = True
+    # Vectorized scatter (parallel assignment like MATLAB's cent_lin_keep)
+    w_phi[ir, jc] = Yhat[:, 0].astype(np.float32)
+    if Yhat.shape[1] >= 2:
+        phi_x[ir, jc] = Yhat[:, 1].astype(np.float32)
+    if Yhat.shape[1] >= 3:
+        phi_y[ir, jc] = Yhat[:, 2].astype(np.float32)
+    if Yhat.shape[1] >= 4:
+        theta[ir, jc] = Yhat[:, 3].astype(np.float32)
 
-    M_proc = QM.astype(np.float32)
+
+    M_proc = ~np.isnan(w_phi) # valid where we wrote predictions
+
+    # Quality map (same idea)
+    # diff_mag = abs(w_phi - abs(phi_x + 1i*phi_y));
+    diff_mag = np.abs(w_phi - np.abs(phi_x + 1j * phi_y))
+
+    # --- mat2gray equivalent over the whole image ---
+    mn = np.nanmin(diff_mag)
+    mx = np.nanmax(diff_mag)
+    rng = mx - mn if np.isfinite(mx - mn) and (mx - mn) > 0 else 1.0
+    diff_mag_01 = (diff_mag - mn) / rng  # in [0,1]
+
+    # QM = M_proc .* (1 - mat2gray(diff_mag));
+    QM = M_proc * (1.0 - diff_mag_01)
+
     return w_phi, phi_x, phi_y, theta, QM, M_proc
 
 # -----------------------------
