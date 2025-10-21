@@ -221,19 +221,33 @@ def calc_spatial_freqs_supervised_regression_batch(
     trained_model: TrainedModelTF,
     feature_name: str,
     M_ROI: Optional[np.ndarray] = None,
+    return_timing: bool = False,
 ):
     '''
     Python analogue to calcSpatialFreqsSupervisedRegressionBatch.m
     Returns: w_phi, phi_x, phi_y, theta, QM, M_proc
     All maps are the same size as g.
     '''
+
+    import time
+    timings = {}
+
+
+    # Phase 1: load trained model 
+    t0 = time.perf_counter()
+
     if M_ROI is None:
         M_ROI = np.ones_like(g, dtype=bool)
     M_ROI = M_ROI.astype(bool)
 
     model, scaler, meta = trained_model.load()
     assert feature_name == trained_model.DB_info.featureName, "FeatureName does not match trained model"
+    timings["model_load"] = time.perf_counter() - t0
 
+    
+
+    # Phase 2: Feature extraction (GPU)
+    t1 = time.perf_counter()
     N = trained_model.DB_info.patch_NR
     M = trained_model.DB_info.patch_NC
     r = N//2; c = M//2  # center offset
@@ -269,7 +283,7 @@ def calc_spatial_freqs_supervised_regression_batch(
     # Features
     fname = feature_name if feature_name != "feature_normalized_DFT" else "feature_DFT"
     X, _S = calc_feature_batch(B, fname)
-
+    
     # Scale if scaler exists
     if scaler is not None:
         try:
@@ -278,11 +292,20 @@ def calc_spatial_freqs_supervised_regression_batch(
             Xs = X
     else:
         Xs = X
+    timings["feature"] = time.perf_counter() - t1
+    
 
+    # Phase 3: Predict
     # Predict (multi-output): assume order [w, wx, wy, theta] or [w, phi_x, phi_y, theta]
+    t2 = time.perf_counter()
+
     Yhat = model.predict(Xs, verbose=0)
     if Yhat.ndim == 1:
         Yhat = Yhat[:, None]
+
+    timings["predict"] = time.perf_counter() - t2    
+
+    timings["total"] = timings["model_load"] + timings["feature"] + timings["predict"]
 
     # Map back to images
    # Initialize with NaNs (MATLAB: deal(nan(NR,NC)))
@@ -293,13 +316,11 @@ def calc_spatial_freqs_supervised_regression_batch(
     QM = np.full((NR, NC), np.nan, dtype=np.float32)
 
     # Vectorized scatter (parallel assignment like MATLAB's cent_lin_keep)
-    w_phi[ir, jc] = Yhat[:, 0].astype(np.float32)
-    if Yhat.shape[1] >= 2:
-        phi_x[ir, jc] = Yhat[:, 1].astype(np.float32)
-    if Yhat.shape[1] >= 3:
-        phi_y[ir, jc] = Yhat[:, 2].astype(np.float32)
+    w_phi[ir, jc] = Yhat[:,0].astype(np.float32)
     if Yhat.shape[1] >= 4:
-        theta[ir, jc] = Yhat[:, 3].astype(np.float32)
+        phi_x[ir, jc] = Yhat[:,1].astype(np.float32)
+        phi_y[ir, jc] = Yhat[:,2].astype(np.float32)
+        theta[ir, jc] = Yhat[:,3].astype(np.float32)
 
 
     M_proc = ~np.isnan(w_phi) # valid where we wrote predictions
@@ -317,7 +338,9 @@ def calc_spatial_freqs_supervised_regression_batch(
     # QM = M_proc .* (1 - mat2gray(diff_mag));
     QM = M_proc * (1.0 - diff_mag_01)
 
-    return w_phi, phi_x, phi_y, theta, QM, M_proc
+    out = (w_phi, phi_x, phi_y, theta, QM, M_proc)
+    return (*out, timings) if return_timing else out
+
 
 # -----------------------------
 # Synthetic pattern generator (to mirror MATLAB test)
