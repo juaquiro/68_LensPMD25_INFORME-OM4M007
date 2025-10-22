@@ -3,10 +3,6 @@ import numpy as np
 import tensorflow as tf
 from typing import Optional, Tuple, Dict
 
-# Import your original utilities as "legacy"
-import importlib
-legacy = importlib.import_module("ml_spatialfreq_utils")
-
 # -----------------------------
 # Utilities
 # -----------------------------
@@ -47,56 +43,11 @@ def _mat2gray_tf(x, mask=None):
 # -----------------------------
 # TF feature extractor (GPU)
 # -----------------------------
-"""
-def tf_calc_feature_batch(B: tf.Tensor, featureName: str = "feature_projected_DFT"):
-    
-    B: (N,M,L) float32 -> X_sel: (L,F) float32, S
-    Mirrors legacy.calc_feature_batch but executed in TF for GPU.
-    
-    assert B.shape.rank == 3, "B must be (N,M,L)"
-    N = tf.shape(B)[0]; M = tf.shape(B)[1]; L = tf.shape(B)[2]
-    B = tf.cast(B, tf.float32)
-
-    # Window + DC removal
-    W2 = _gaussian_window_tf(int(B.shape[0]), int(B.shape[1]), dtype=tf.float32)
-    Bwin = B * W2[...,None]
-    Bwin = Bwin - tf.reduce_mean(Bwin, axis=(0,1), keepdims=True)
-    eps_ = tf.constant(1e-8, tf.float32)
-
-    if featureName == "feature_GV":
-        muGV = tf.reduce_mean(Bwin, axis=(0,1))
-        E2   = tf.reduce_mean(Bwin**2, axis=(0,1))
-        sigmaGV = tf.sqrt(tf.maximum(E2 - muGV**2, eps_))
-        X = tf.reshape(tf.transpose(Bwin, perm=[2,0,1]), [L, -1])
-        X_sel = (X - muGV[:,None]) / sigmaGV[:,None]
-        return tf.cast(X_sel, tf.float32), {"W": W2}
-
-    # FFT branch
-    G = tf.signal.fft2d(tf.cast(Bwin, tf.complex64))
-    G = _fftshift2d(G)
-    abs_G = tf.math.abs(G)
-
-    Wxp = int(B.shape[1]) - int(B.shape[1])//2
-    abs_sel = abs_G[:, int(B.shape[1])//2 :, :]   # (N, Wxp, L)
-    GNorm = tf.reduce_sum(abs_sel, axis=(0,1))
-    GNorm = tf.maximum(GNorm, eps_)
-
-    if featureName == "feature_DFT":
-        X = tf.reshape(tf.transpose(abs_sel, perm=[2,0,1]), [L, -1])
-        X_sel = X / GNorm[:,None]
-    else:  # projected DFT
-        G_sp_XP = tf.reduce_sum(abs_sel, axis=0)   # (Wxp,L)
-        G_sp_YP = tf.reduce_sum(abs_sel, axis=1)   # (N,L)
-        X = tf.concat([tf.transpose(G_sp_XP), tf.transpose(G_sp_YP)], axis=1)  # (L, Wxp+N)
-        X_sel = X / GNorm[:,None]
-
-    return tf.cast(X_sel, tf.float32), {"W": W2}
-"""
 
 def tf_calc_feature_batch(B: tf.Tensor, featureName: str = "feature_projected_DFT"):
     """
     B: (N,M,L) float32 -> X_sel: (L,F) float32, S
-    Exact TF reimplementation of legacy.calc_feature_batch (NumPy) so A/B matches.
+    Exact TF reimplementation of ml_spatialfreq_utils.calc_feature_batch (NumPy) so A/B matches.
     """
     assert featureName in ("feature_GV","feature_DFT","feature_projected_DFT")
     assert B.shape.rank == 3, "B must be (N,M,L)"
@@ -228,7 +179,7 @@ def calc_spatial_freqs_supervised_regression_batch_gpu(
     #######################################################################################
     #######################################################################################
 
-    """
+    
     # Compute M_proc (valid centers inside ROI and borders)
     M_borders = np.zeros_like(M_ROI, dtype=bool)
     M_borders[r:NR-(N-r), c:NC-(M-c)] = True
@@ -263,17 +214,27 @@ def calc_spatial_freqs_supervised_regression_batch_gpu(
     t1 = time.perf_counter()
     # Map legacy "feature_normalized_DFT" to "feature_DFT"
     feat_name = 'feature_DFT' if feature_name == 'feature_normalized_DFT' else feature_name
+
+    #AQDEBUG 22OCT25 here Xs is a tensorlow tensor
     Xs, _ = tf_calc_feature_batch(B, feat_name)
+    #AQDEBUG 22OCT25 use numpy version for testing
+    from ml_spatialfreq_utils import calc_feature_batch
+    X_np, _=calc_feature_batch(B.numpy(), feat_name)
+    Xs_np = scaler.transform(X_np)
+    Xs=tf.convert_to_tensor(Xs_np, dtype=tf.float32)
+
+
     # Optional scaler (if you persisted mean/scale in meta)
     if 'scaler_mean' in meta and 'scaler_scale' in meta:
         mean = tf.convert_to_tensor(meta['scaler_mean'], dtype=tf.float32)
         scale = tf.convert_to_tensor(meta['scaler_scale'], dtype=tf.float32)
         Xs = (Xs - mean) / tf.maximum(scale, 1e-8)
     _force_sync(Xs)
+    
     timings["feature"] = time.perf_counter() - t1
 
 
-    """
+    
 
     #SECTION 2 ENDS GPU optimized feature calculation  NOT WORKING
     ######################################################################################
@@ -285,6 +246,7 @@ def calc_spatial_freqs_supervised_regression_batch_gpu(
     #######################################################################################
     #######################################################################################
 
+    """
     
     from ml_spatialfreq_utils import calc_feature_batch
     timings = {}
@@ -327,6 +289,8 @@ def calc_spatial_freqs_supervised_regression_batch_gpu(
     #sanity check between numpy solution and tensor flow solution
     X_tf, S_tf = tf_calc_feature_batch(tf.convert_to_tensor(B, tf.float32), 'feature_projected_DFT')
     print(np.allclose(X, X_tf.numpy(), rtol=1e-4, atol=1e-5))
+
+    
     
     # Scale if scaler exists
     if scaler is not None:
@@ -337,6 +301,10 @@ def calc_spatial_freqs_supervised_regression_batch_gpu(
     else:
         Xs = X
     timings["feature"] = time.perf_counter() - t1
+
+    """
+
+    
     
 
     #SECTION 2 ENDS NON GPU optimized feature calculation 
@@ -383,38 +351,3 @@ def calc_spatial_freqs_supervised_regression_batch_gpu(
     out = (w_phi, phi_x, phi_y, theta, QM.astype(np.float32), M_proc.astype(np.float32))
     return (*out, timings) if return_timing else out
 
-# -----------------------------
-# Legacy total-time wrapper (calls your original function)
-# -----------------------------
-def calc_spatial_freqs_legacy_total(
-    g: np.ndarray,
-    trained_model,
-    feature_name: str,
-    M_ROI: Optional[np.ndarray] = None
-):
-    import time
-    t0 = time.perf_counter()
-    out = legacy.calc_spatial_freqs_supervised_regression_batch(g, trained_model, feature_name, M_ROI)
-    total = time.perf_counter() - t0
-    return (*out, {"total": total})
-
-# -----------------------------
-# Benchmark helper
-# -----------------------------
-def benchmark_compare(g, trained, feature_name="feature_projected_DFT", M_ROI=None):
-    """
-    Runs legacy (total) vs GPU (per-phase) and prints a neat summary.
-    """
-    (wA, pxA, pyA, thA, QMA, MprocA, tA) = calc_spatial_freqs_legacy_total(g, trained, feature_name, M_ROI)
-    (wB, pxB, pyB, thB, QMB, MprocB, tB) = calc_spatial_freqs_supervised_regression_batch_gpu(g, trained, feature_name, M_ROI, return_timing=True)
-
-    print("=== Timing (seconds) ===")
-    print(f"Legacy total: {tA['total']:.4f}")
-    print(f"GPU  patch : {tB['patch']:.4f}")
-    print(f"GPU  feat  : {tB['feature']:.4f}")
-    print(f"GPU  predict: {tB['predict']:.4f}")
-    print(f"GPU  total : {tB['total']:.4f}")
-    if tB['total'] > 0:
-        print(f"Speed-up (Legacy→GPU) ≈ ×{tA['total']/tB['total']:.2f}")
-
-    return (wA, pxA, pyA, thA, QMA, wB, pxB, pyB, thB, QMB, tA, tB)
