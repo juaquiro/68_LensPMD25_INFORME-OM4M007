@@ -43,7 +43,95 @@ def _mat2gray_tf(x, mask=None):
 # -----------------------------
 # TF feature extractor (GPU)
 # -----------------------------
+def tf_calc_feature_batch(B: tf.Tensor, featureName: str = "feature_projected_DFT"):
+    """
+    B: (N,M,L) float32 -> X_sel: (L,F) float32, S
+    Exact TF reimplementation of ml_spatialfreq_utils.calc_feature_batch (NumPy).
+    """
+    assert featureName in ("feature_GV","feature_DFT","feature_projected_DFT")
+    assert B.shape.rank == 3, "B must be (N,M,L)"
+    B = tf.cast(B, tf.float32)
+    N = tf.shape(B)[0]; M = tf.shape(B)[1]; L = tf.shape(B)[2]
 
+    # ----- Window with 1-based centering, like NumPy -----
+    # x0 = floor(M/2)+1 ; y0 = floor(N/2)+1 ; x=[1..M]-x0 ; y=[1..N]-y0
+    x0 = (M // 2) + 1
+    y0 = (N // 2) + 1
+    xx = tf.range(1, M + 1, dtype=tf.int32)
+    yy = tf.range(1, N + 1, dtype=tf.int32)
+    XX, YY = tf.meshgrid(xx, yy, indexing='xy')
+    x = tf.cast(XX - x0, tf.float32)
+    y = tf.cast(YY - y0, tf.float32)
+    sigma_x = tf.cast(M, tf.float32) / 3.0
+    sigma_y = tf.cast(N, tf.float32) / 3.0
+    W2 = tf.exp(-0.5*(x**2)/(sigma_x**2) - 0.5*(y**2)/(sigma_y**2))      # (N,M)
+    W = W2[..., None]                                                     # (N,M,1)
+
+    # ----- DC removal (spatial) THEN apply spatial window (NumPy order) -----
+    mu_sp = tf.reduce_mean(B, axis=(0,1), keepdims=True)                  # (1,1,L)
+    B0    = B - mu_sp
+    Bwin  = B0 * W
+
+    if featureName == "feature_GV":
+        eps_ = tf.constant(1e-12, tf.float32)
+        muGV = tf.reduce_mean(Bwin, axis=(0,1))                           # (L,)
+        E2   = tf.reduce_mean(Bwin*Bwin, axis=(0,1))                      # (L,)
+        sigmaGV = tf.sqrt(tf.maximum(E2 - muGV*muGV, eps_))
+        X = tf.reshape(tf.transpose(Bwin, perm=[2,0,1]), [L, -1])         # (L, N*M)
+        X_sel = (X - muGV[:,None]) / sigmaGV[:,None]
+        return tf.cast(X_sel, tf.float32), {"W": W2}
+
+    # ----- FFT per patch, zero DC, fftshift, then freq weighting with same W -----
+    G = tf.signal.fft2d(tf.cast(Bwin, tf.complex64))                      # (N,M,L)
+    # zero DC bin [0,0,:] BEFORE fftshift
+    idx = tf.stack([
+        tf.zeros([L], tf.int32),            # rows=0
+        tf.zeros([L], tf.int32),            # cols=0
+        tf.range(L, dtype=tf.int32)         # pages k
+    ], axis=1)
+    G = tf.tensor_scatter_nd_update(G, idx, tf.zeros([L], G.dtype))
+    G = tf.roll(tf.roll(G, shift=N//2, axis=0), shift=M//2, axis=1)       # fftshift
+    G = G * tf.cast(W, G.dtype)                                           # same Gaussian in freq
+
+    # ----- Magnitude and full-spectrum normalization -----
+    G_abs = tf.math.abs(G)                                                # (N,M,L)
+    GNorm = tf.reduce_sum(G_abs, axis=(0,1))                               # (L,)
+    eps_ = tf.constant(1e-12, tf.float32)
+    GNorm = tf.maximum(GNorm, eps_)
+
+    # ----- Semiplane wx >= 0: columns x0..M (1-based) -> [x0-1 : M) 0-based -----
+    start = x0 - 1
+    abs_G_sp = G_abs[:, start:, :]                                        # (N, Wxp, L)
+
+    # ----- Decide top vs bottom half by energy inside that semiplane -----
+    # Top rows: [0 : y0-1), Bottom rows: [y0 : N)
+    sumTop    = tf.reduce_sum(abs_G_sp[0:(y0-1), :, :], axis=(0,1))       # (L,)
+    sumBottom = tf.reduce_sum(abs_G_sp[y0:, :, :], axis=(0,1))            # (L,)
+    isTopGreater = sumTop > sumBottom                                     # (L,)
+
+    # Build row masks and select with tf.where (no scatter)
+    row_idx   = tf.range(tf.shape(abs_G_sp)[0])
+    top_mask  = tf.cast(row_idx[:,None,None] <  (y0-1), abs_G_sp.dtype)   # (N,1,1)
+    bot_mask  = tf.cast(row_idx[:,None,None] >=  y0,    abs_G_sp.dtype)   # (N,1,1)
+    keep_top  = abs_G_sp * top_mask
+    keep_bot  = abs_G_sp * bot_mask
+    abs_sel   = tf.where(tf.reshape(isTopGreater, [1,1,-1]), keep_top, keep_bot)  # (N,Wxp,L)
+
+    # ----- Assemble features -----
+    if featureName == "feature_DFT":
+        X = tf.reshape(tf.transpose(abs_sel, perm=[2,0,1]), [L, -1])      # (L, N*Wxp)
+        X_sel = X / GNorm[:,None]
+    else:  # feature_projected_DFT
+        G_sp_XP = tf.reduce_sum(abs_sel, axis=0)                           # (Wxp,L)
+        G_sp_YP = tf.reduce_sum(abs_sel, axis=1)                           # (N,L)
+        X = tf.concat([tf.transpose(G_sp_XP), tf.transpose(G_sp_YP)], axis=1)  # (L, Wxp+N)
+        X_sel = X / GNorm[:,None]
+
+    return tf.cast(X_sel, tf.float32), {"W": W2}
+
+
+
+'''
 def tf_calc_feature_batch(B: tf.Tensor, featureName: str = "feature_projected_DFT"):
     """
     B: (N,M,L) float32 -> X_sel: (L,F) float32, S
@@ -146,7 +234,7 @@ def tf_calc_feature_batch(B: tf.Tensor, featureName: str = "feature_projected_DF
         X_sel = X / GNorm_safe[:,None]
 
     return tf.cast(X_sel, tf.float32), {"W": W2}
-
+    '''
     
 # -----------------------------
 # GPU-optimized pipeline with per-phase timing
@@ -174,12 +262,6 @@ def calc_spatial_freqs_supervised_regression_batch_gpu(
 
     NR, NC = g.shape
 
-    #SECTION 1 BEGIN GPU optimized feature calculation NOT WORKING
-    ######################################################################################
-    #######################################################################################
-    #######################################################################################
-
-    
     # Compute M_proc (valid centers inside ROI and borders)
     M_borders = np.zeros_like(M_ROI, dtype=bool)
     M_borders[r:NR-(N-r), c:NC-(M-c)] = True
@@ -215,13 +297,18 @@ def calc_spatial_freqs_supervised_regression_batch_gpu(
     # Map legacy "feature_normalized_DFT" to "feature_DFT"
     feat_name = 'feature_DFT' if feature_name == 'feature_normalized_DFT' else feature_name
 
-    #AQDEBUG 22OCT25 here Xs is a tensorlow tensor
+    #AQDEBUG tensorflow option 22OCT25 here Xs is a tensorlow tensor
     Xs, _ = tf_calc_feature_batch(B, feat_name)
-    #AQDEBUG 22OCT25 use numpy version for testing
-    from ml_spatialfreq_utils import calc_feature_batch
-    X_np, _=calc_feature_batch(B.numpy(), feat_name)
-    Xs_np = scaler.transform(X_np)
-    Xs=tf.convert_to_tensor(Xs_np, dtype=tf.float32)
+    #AQDEBUG numpy option 22OCT25 use numpy version for testing
+    #from ml_spatialfreq_utils import calc_feature_batch
+    
+    #X_np, _ = calc_feature_batch(B.numpy(), feat_name)
+    #Xs_np = scaler.transform(X_np)
+    #Xs=tf.convert_to_tensor(Xs_np, dtype=tf.float32)
+
+    #sanity check between numpy solution and tensor flow solution
+    #X_tf, S_tf = tf_calc_feature_batch(tf.convert_to_tensor(B, tf.float32), 'feature_projected_DFT')
+    #print(np.allclose(X, X_tf.numpy(), rtol=1e-4, atol=1e-5))
 
 
     # Optional scaler (if you persisted mean/scale in meta)
@@ -232,85 +319,6 @@ def calc_spatial_freqs_supervised_regression_batch_gpu(
     _force_sync(Xs)
     
     timings["feature"] = time.perf_counter() - t1
-
-
-    
-
-    #SECTION 2 ENDS GPU optimized feature calculation  NOT WORKING
-    ######################################################################################
-    #######################################################################################
-    #######################################################################################
-
-    #SECTION 2 BEGIN NON GPU optimized feature calculation 
-    ######################################################################################
-    #######################################################################################
-    #######################################################################################
-
-    """
-    
-    from ml_spatialfreq_utils import calc_feature_batch
-    timings = {}
-
-    t0 = time.perf_counter()
-    timings["patch"] = time.perf_counter() - t0
-    t1 = time.perf_counter()
-    
-    # Compute valid centers where an N x M patch fully lies in ROI.
-    # We'll use convolution with an N x M ones kernel to count ROI pixels per center.
-    from scipy.signal import convolve2d
-    Mvalid_counts = convolve2d(M_ROI.astype(np.uint8), np.ones((N,M), dtype=np.uint8), mode="same", boundary="fill")
-    full_area = int(N*M)
-    valid_centers = (Mvalid_counts == full_area)
-
-    # Avoid borders explicitly to keep N x M fully inside image bounds
-    if r > 0:
-        valid_centers[:r, :] = False
-        valid_centers[-r:, :] = False
-    if c > 0:
-        valid_centers[:, :c] = False
-        valid_centers[:, -c:] = False
-
-    ir, jc = np.where(valid_centers)
-    L = len(ir)
-    if L == 0:
-        z = np.zeros_like(g, dtype=np.float32)
-        return z, z, z, z, np.zeros_like(g, bool), M_ROI.astype(float)
-
-    # Extract patches into stack B (N x M x L)
-    B = np.zeros((N, M, L), dtype=np.float32)
-    for k in range(L):
-        i = ir[k]; j = jc[k]
-        B[:,:,k] = g[i-r:i-r+N, j-c:j-c+M]
-
-    # Features
-    fname = feature_name if feature_name != "feature_normalized_DFT" else "feature_DFT"
-    X, _S = calc_feature_batch(B, fname)
-
-    #sanity check between numpy solution and tensor flow solution
-    X_tf, S_tf = tf_calc_feature_batch(tf.convert_to_tensor(B, tf.float32), 'feature_projected_DFT')
-    print(np.allclose(X, X_tf.numpy(), rtol=1e-4, atol=1e-5))
-
-    
-    
-    # Scale if scaler exists
-    if scaler is not None:
-        try:
-            Xs = scaler.transform(X)
-        except Exception:
-            Xs = X
-    else:
-        Xs = X
-    timings["feature"] = time.perf_counter() - t1
-
-    """
-
-    
-    
-
-    #SECTION 2 ENDS NON GPU optimized feature calculation 
-    ######################################################################################
-    #######################################################################################
-    #######################################################################################
 
    
     # Phase 3: Predict
