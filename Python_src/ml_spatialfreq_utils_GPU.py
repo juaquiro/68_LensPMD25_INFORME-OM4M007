@@ -224,20 +224,9 @@ def calc_spatial_freqs_supervised_regression_batch_gpu(
     # Map legacy "feature_normalized_DFT" to "feature_DFT"
     feat_name = 'feature_DFT' if feature_name == 'feature_normalized_DFT' else feature_name
 
-    #AQDEBUG tensorflow option 22OCT25 here Xs is a tensorlow tensor
+    # AQDEBUG 23OCT25 to compare numpy vs TF see DEBUG_Predict_TF_SpatialFreqs notebook
     Xs, _ = tf_calc_feature_batch(B, feat_name)
     
-    #AQDEBUG numpy option 22OCT25 use numpy version for testing
-    """ from ml_spatialfreq_utils import calc_feature_batch
-    X_np, _ = calc_feature_batch(B.numpy(), feat_name)
-    Xs_np = scaler.transform(X_np)
-    Xs=tf.convert_to_tensor(Xs_np, dtype=tf.float32) """
-
-    #sanity check between numpy solution and tensor flow solution
-    #X_tf, S_tf = tf_calc_feature_batch(tf.convert_to_tensor(B, tf.float32), 'feature_projected_DFT')
-    #print(np.allclose(X, X_tf.numpy(), rtol=1e-4, atol=1e-5))
-
-
     # --- Feature scaling (robust) ---
     # If the model begins with a Keras Normalization layer, skip external scaling.
     use_external_scaling = True
@@ -289,7 +278,8 @@ def calc_spatial_freqs_supervised_regression_batch_gpu(
    
     # Phase 3: Predict
     t2 = time.perf_counter()
-    Yhat = model(Xs, training=False)
+    Yhat = model(Xs, training=False, batch_size=8192)
+    #Yhat = model.predict(Xs, verbose=0, batch_size=8192)
     # Force materialization
     Yhat_np = Yhat.numpy()
     timings["predict"] = time.perf_counter() - t2
