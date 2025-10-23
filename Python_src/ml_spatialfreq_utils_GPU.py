@@ -242,7 +242,7 @@ def calc_spatial_freqs_supervised_regression_batch_gpu(
     # If the model begins with a Keras Normalization layer, skip external scaling.
     use_external_scaling = True
     try:
-        from tf.keras.layers import Normalization as _Norm
+        from tf.keras.layers import Normalization as _Norm # type: ignore
         if isinstance(getattr(model, "layers", [None])[0], _Norm):
             use_external_scaling = False
     except Exception:
