@@ -82,7 +82,14 @@ def tf_calc_feature_batch(B: tf.Tensor, featureName: str = "feature_projected_DF
         return tf.cast(X_sel, tf.float32), {"W": W2}
 
     # ----- FFT per patch, zero DC, fftshift, then freq weighting with same W -----
-    G = tf.signal.fft2d(tf.cast(Bwin, tf.complex64))                      # (N,M,L)
+    # tf.signal.fft2d always transforms the last two axes, while NumPy call transforms axes (0,1) of an array with shape (N, M, L).
+    # NumPy: np.fft.fft2(Bwin_np, axes=(0,1)) → FFT over the first two axes (N, M), treating L as batch.
+    # TensorFlow: tf.signal.fft2d(Bwin_tf) → FFT over the innermost two axes. With shape (N, M, L), TF will transform axes (M, L), which is wrong for your case.
+    # send the two first axes to the innermost dimmnesions
+    B_chw = tf.transpose(Bwin, perm=[2, 0, 1])                      # (L,N,M)
+    G_chw = tf.signal.fft2d(tf.cast(B_chw, tf.complex64))
+    G = tf.transpose(G_chw, perm=[1, 2, 0])    
+    
     # zero DC bin [0,0,:] BEFORE fftshift
     idx = tf.stack([
         tf.zeros([L], tf.int32),            # rows=0
@@ -90,8 +97,8 @@ def tf_calc_feature_batch(B: tf.Tensor, featureName: str = "feature_projected_DF
         tf.range(L, dtype=tf.int32)         # pages k
     ], axis=1)
     G = tf.tensor_scatter_nd_update(G, idx, tf.zeros([L], G.dtype))
-    G = tf.roll(tf.roll(G, shift=N//2, axis=0), shift=M//2, axis=1)       # fftshift
-    G = G * tf.cast(W, G.dtype)                                           # same Gaussian in freq
+    G = tf.signal.fftshift(G, axes=(0, 1))                               # fftshift axis 0 and 1
+    G = G * tf.cast(W, G.dtype)                                           # same Gaussian in freq, boradcast over pages
 
     # ----- Magnitude and full-spectrum normalization -----
     G_abs = tf.math.abs(G)                                                # (N,M,L)
@@ -102,6 +109,7 @@ def tf_calc_feature_batch(B: tf.Tensor, featureName: str = "feature_projected_DF
     # ----- Semiplane wx >= 0: columns x0..M (1-based) -> [x0-1 : M) 0-based -----
     start = x0 - 1
     abs_G_sp = G_abs[:, start:, :]                                        # (N, Wxp, L)
+    Wxp=tf.shape(abs_G_sp)[1]
 
     # ----- Decide top vs bottom half by energy inside that semiplane -----
     # Top rows: [0 : y0-1), Bottom rows: [y0 : N)
@@ -127,114 +135,33 @@ def tf_calc_feature_batch(B: tf.Tensor, featureName: str = "feature_projected_DF
         X = tf.concat([tf.transpose(G_sp_XP), tf.transpose(G_sp_YP)], axis=1)  # (L, Wxp+N)
         X_sel = X / GNorm[:,None]
 
-    return tf.cast(X_sel, tf.float32), {"W": W2}
-
-
-
-'''
-def tf_calc_feature_batch(B: tf.Tensor, featureName: str = "feature_projected_DFT"):
-    """
-    B: (N,M,L) float32 -> X_sel: (L,F) float32, S
-    Exact TF reimplementation of ml_spatialfreq_utils.calc_feature_batch (NumPy) so A/B matches.
-    """
-    assert featureName in ("feature_GV","feature_DFT","feature_projected_DFT")
-    assert B.shape.rank == 3, "B must be (N,M,L)"
-    B = tf.cast(B, tf.float32)
-    N = tf.shape(B)[0]; M = tf.shape(B)[1]; L = tf.shape(B)[2]
-
-    # ----- Build spatial Gaussian window with 1-based centering like NumPy -----
-    # NumPy: x0 = floor(M/2)+1 ; y0 = floor(N/2)+1 ; x = [1..M]-x0 ; y = [1..N]-y0
-    x0 = (tf.shape(B)[1] // 2) + 1
-    y0 = (tf.shape(B)[0] // 2) + 1
-    xx = tf.range(1, tf.shape(B)[1] + 1, dtype=tf.int32)
-    yy = tf.range(1, tf.shape(B)[0] + 1, dtype=tf.int32)
-    XX, YY = tf.meshgrid(xx, yy, indexing='xy')
-    x = tf.cast(XX - x0, tf.float32)
-    y = tf.cast(YY - y0, tf.float32)
-    sigma_x = tf.cast(tf.shape(B)[1], tf.float32) / 3.0
-    sigma_y = tf.cast(tf.shape(B)[0], tf.float32) / 3.0
-    W2 = tf.exp(-0.5*(x**2)/(sigma_x**2) - 0.5*(y**2)/(sigma_y**2))  # (N,M)
-
-    # ----- DC removal on raw patch, then apply spatial window -----
-    mu_sp = tf.reduce_mean(B, axis=(0,1), keepdims=True)   # (1,1,L)
-    B0    = B - mu_sp
-    W     = tf.expand_dims(W2, axis=-1)                    # (N,M,1)
-    Bwin  = B0 * W
-
-    if featureName == "feature_GV":
-        # GV features computed on Bwin (match NumPy)
-        eps_ = tf.constant(1e-12, tf.float32)
-        muGV = tf.reduce_mean(Bwin, axis=(0,1))            # (L,)
-        E2   = tf.reduce_mean(Bwin*Bwin, axis=(0,1))       # (L,)
-        sigmaGV = tf.sqrt(tf.maximum(E2 - muGV*muGV, eps_))
-        X = tf.reshape(tf.transpose(Bwin, perm=[2,0,1]), [L, -1])  # (L,N*M)
-        X_sel = (X - muGV[:,None]) / sigmaGV[:,None]
-        return tf.cast(X_sel, tf.float32), {"W": W2}
-
-    # ----- FFT over spatial dims, zero DC, fftshift, then frequency weighting -----
-    G = tf.signal.fft2d(tf.cast(Bwin, tf.complex64))       # (N,M,L)
-    # Zero DC bin (row 0, col 0) per patch BEFORE fftshift (as NumPy does)
-    # Easiest way: overwrite slice
-    # Build an index mask to set [0,0,:] = 0
-    zeros_dc = tf.tensor_scatter_nd_update(
-        G,
-        indices=tf.concat([
-            tf.zeros([tf.shape(G)[2], 1], tf.int32),   # row=0
-            tf.zeros([tf.shape(G)[2], 1], tf.int32),   # col=0
-            tf.reshape(tf.range(tf.shape(G)[2], dtype=tf.int32), [-1,1])  # page
-        ], axis=1),
-        updates=tf.zeros([tf.shape(G)[2]], dtype=G.dtype)
-    )
-    G = zeros_dc
-    # Center spectrum
-    G = _fftshift2d(G)
-    # Multiply by SAME spatial Gaussian window (frequency weighting) like NumPy
-    G = G * tf.cast(W, G.dtype)
-
-    # ----- Magnitude, normalization over FULL spectrum -----
-    G_abs = tf.math.abs(G)                          # (N,M,L)
-    GNorm = tf.reduce_sum(G_abs, axis=(0,1))        # (L,)
-
-    # ----- Semiplane wx >= 0: columns x0..M in 1-based -> zero-based [x0-1 : M) -----
-    start = x0 - 1                                  # zero-based
-    abs_G_sp = G_abs[:, start:, :]                  # (N, Wxp, L)
-    Wxp = tf.shape(abs_G_sp)[1]
-
-    # ----- Choose top vs bottom half per patch by energy -----
-    # Top rows: [0 : y0-1) ; Bottom rows: [y0 : N)
-    sumTop    = tf.reduce_sum(abs_G_sp[0:(y0-1), :, :], axis=(0,1))    # (L,)
-    sumBottom = tf.reduce_sum(abs_G_sp[y0:, :, :], axis=(0,1))         # (L,)
-    isTopGreater = tf.greater(sumTop, sumBottom)                        # (L,)
-
-    # Build two candidates, select per page
-    abs1 = tf.identity(abs_G_sp)                                        # zero TOP when ~isTopGreater
-    abs1 = tf.tensor_scatter_nd_update(abs1,
-        indices=tf.stack([tf.range(0, y0-1, dtype=tf.int32)], axis=-1),
-        updates=tf.zeros_like(abs1[0:(y0-1), :, :]))
-    abs2 = tf.identity(abs_G_sp)                                        # zero BOTTOM when isTopGreater
-    abs2 = tf.tensor_scatter_nd_update(abs2,
-        indices=tf.stack([tf.range(y0, tf.shape(abs2)[0], dtype=tf.int32)], axis=-1),
-        updates=tf.zeros_like(abs2[y0:, :, :]))
-
-    # Select per L: abs_sel[:,:,k] = abs2 if isTopGreater[k] else abs1
-    # Vectorized selection:
-    mask = tf.reshape(tf.cast(isTopGreater, abs1.dtype), [1,1,-1])
-    abs_sel = abs1*(1.0 - mask) + abs2*mask                              # (N,Wxp,L)
-
-    eps_ = tf.constant(1e-12, tf.float32)
-    GNorm_safe = tf.maximum(GNorm, eps_)                                  # (L,)
-
-    if featureName == "feature_DFT":
-        X = tf.reshape(tf.transpose(abs_sel, perm=[2,0,1]), [L, -1])     # (L, N*Wxp)
-        X_sel = X / GNorm_safe[:,None]
+    # ----- Optional debug/inspection outputs -----
+    if featureName != "feature_GV":
+        S = {
+            "x0": x0,
+            "y0": y0,
+            "W": W2,                 # one window (all identical across L)
+            "GNorm": GNorm,          # (L,1)
+            "abs_G_sp": abs_G_sp,    # (N, Wxp, L)
+            "abs_sel": abs_sel,      # (N, Wxp, L)
+            "mu_sp": mu_sp,          # (1,1,L)
+            "X": X ,                 # (L, N*Wxp)
+            "isTopGreater": isTopGreater, # (L,)
+            "L": L,                  # ()
+            "G_sp_XP": G_sp_XP,      # (L, Wxp)
+            "G_sp_YP": G_sp_YP,      # (L, N)
+            "Wxp": Wxp,              # ()
+            "G_abs": G_abs,          # (N,M,L)
+            "G": G,                  # (N,M,L)
+            "Bwin": Bwin             # (N,M,L)
+        }
     else:
-        G_sp_XP = tf.reduce_sum(abs_sel, axis=0)                          # (Wxp,L)
-        G_sp_YP = tf.reduce_sum(abs_sel, axis=1)                          # (N,L)
-        X = tf.concat([tf.transpose(G_sp_XP), tf.transpose(G_sp_YP)], axis=1)  # (L, Wxp+N)
-        X_sel = X / GNorm_safe[:,None]
+        S=None
 
-    return tf.cast(X_sel, tf.float32), {"W": W2}
-    '''
+
+    return tf.cast(X_sel, tf.float32), S
+
+
     
 # -----------------------------
 # GPU-optimized pipeline with per-phase timing
@@ -299,23 +226,62 @@ def calc_spatial_freqs_supervised_regression_batch_gpu(
 
     #AQDEBUG tensorflow option 22OCT25 here Xs is a tensorlow tensor
     Xs, _ = tf_calc_feature_batch(B, feat_name)
-    #AQDEBUG numpy option 22OCT25 use numpy version for testing
-    #from ml_spatialfreq_utils import calc_feature_batch
     
-    #X_np, _ = calc_feature_batch(B.numpy(), feat_name)
-    #Xs_np = scaler.transform(X_np)
-    #Xs=tf.convert_to_tensor(Xs_np, dtype=tf.float32)
+    #AQDEBUG numpy option 22OCT25 use numpy version for testing
+    """ from ml_spatialfreq_utils import calc_feature_batch
+    X_np, _ = calc_feature_batch(B.numpy(), feat_name)
+    Xs_np = scaler.transform(X_np)
+    Xs=tf.convert_to_tensor(Xs_np, dtype=tf.float32) """
 
     #sanity check between numpy solution and tensor flow solution
     #X_tf, S_tf = tf_calc_feature_batch(tf.convert_to_tensor(B, tf.float32), 'feature_projected_DFT')
     #print(np.allclose(X, X_tf.numpy(), rtol=1e-4, atol=1e-5))
 
 
-    # Optional scaler (if you persisted mean/scale in meta)
-    if 'scaler_mean' in meta and 'scaler_scale' in meta:
-        mean = tf.convert_to_tensor(meta['scaler_mean'], dtype=tf.float32)
-        scale = tf.convert_to_tensor(meta['scaler_scale'], dtype=tf.float32)
-        Xs = (Xs - mean) / tf.maximum(scale, 1e-8)
+    # --- Feature scaling (robust) ---
+    # If the model begins with a Keras Normalization layer, skip external scaling.
+    use_external_scaling = True
+    try:
+        from tf.keras.layers import Normalization as _Norm
+        if isinstance(getattr(model, "layers", [None])[0], _Norm):
+            use_external_scaling = False
+    except Exception:
+        pass
+
+    if use_external_scaling:
+        # 1) Preferred: scaler has mean_/var_ or mean_/scale_
+        if scaler is not None:
+            has_mean = hasattr(scaler, "mean_")
+            has_var  = hasattr(scaler, "var_")
+            has_scale = hasattr(scaler, "scale_")
+
+            if has_mean and (has_var or has_scale):
+                mean_vec = tf.convert_to_tensor(scaler.mean_, dtype=tf.float32)
+                if has_var:
+                    std_vec = tf.sqrt(tf.convert_to_tensor(scaler.var_, dtype=tf.float32))
+                else:
+                    std_vec = tf.convert_to_tensor(scaler.scale_, dtype=tf.float32)
+
+                # shape guard: (F,) -> (1,F) for broadcasting against Xs: (L,F)
+                mean_vec = tf.reshape(mean_vec, [1, -1])
+                std_vec  = tf.reshape(std_vec,  [1, -1])
+
+                # sanity check: feature dims match
+                f_model = int(Xs.shape[-1])
+                f_scaler = int(mean_vec.shape[-1])
+                if f_model != f_scaler:
+                    raise ValueError(
+                        f"Scaler length {f_scaler} does not match feature length {f_model}. "
+                        "Check patch size / feature variant and the scaler used at training."
+                    )
+
+                Xs = (Xs - mean_vec) / tf.maximum(std_vec, 1e-8)
+        
+            # 2) Fallback: use scaler.transform on CPU, then convert back
+            elif hasattr(scaler, "transform"):
+                Xs = tf.convert_to_tensor(scaler.transform(Xs.numpy()).astype(np.float32))
+      # If nothing applied, we proceed unscaled (assuming model handles it)
+
     _force_sync(Xs)
     
     timings["feature"] = time.perf_counter() - t1

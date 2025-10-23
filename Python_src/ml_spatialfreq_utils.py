@@ -166,21 +166,28 @@ def calc_feature_batch(B: np.ndarray, featureName: str = "feature_projected_DFT"
         X_sel = X / np.maximum(GNorm, eps_)                       # (L, Wxp+N)
 
     # ----- Optional debug/inspection outputs -----
-    S = {
-        "x0": x0,
-        "y0": y0,
-        "W": W2,                 # one window (all identical across L)
-        "GNorm": GNorm,          # (L,1)
-        "abs_G_sp": abs_G_sp,    # (N, Wxp, L)
-        "abs_sel": abs_sel       # (N, Wxp, L)
-    }
     if featureName != "feature_GV":
-        try:
-            S["G_sp_XP"] = abs_sel.sum(axis=0).T  # (L, Wxp)
-            S["G_sp_YP"] = abs_sel.sum(axis=1).T  # (L, N)
-        except Exception:
-            S["G_sp_XP"] = None
-            S["G_sp_YP"] = None
+        S = {
+            "x0": x0,
+            "y0": y0,
+            "W": W2,                 # one window (all identical across L)
+            "GNorm": GNorm,          # (L,1)
+            "abs_G_sp": abs_G_sp,    # (N, Wxp, L)
+            "abs_sel": abs_sel,      # (N, Wxp, L)
+            "mu_sp": mu_sp,          # (1,1,L)
+            "X": X ,                 # (L, N*Wxp)
+            "isTopGreater": isTopGreater, # (L,)
+            "L": L,                  # ()
+            "G_sp_XP": G_sp_XP,      # (L, Wxp)
+            "G_sp_YP": G_sp_YP,      # (L, N)
+            "Wxp": Wxp,              # ()
+            "G_abs": G_abs,          # (N,M,L)
+            "G": G,                  # (N,M,L)
+            "Bwin": Bwin             # (N,M,L)
+        }
+    else:
+        S=None
+
 
     return X_sel.astype(np.float64, copy=False), S
 
