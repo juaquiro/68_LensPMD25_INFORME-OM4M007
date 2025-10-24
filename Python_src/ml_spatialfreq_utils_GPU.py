@@ -16,30 +16,6 @@ def _force_sync(x=None):
     else:
         _ = tf.reduce_sum(tf.cast(x, tf.float32)).numpy()
 
-def _fftshift2d(x):
-    h = tf.shape(x)[-2]
-    w = tf.shape(x)[-1]
-    return tf.roll(tf.roll(x, shift=h//2, axis=-2), shift=w//2, axis=-1)
-
-def _gaussian_window_tf(N:int, M:int, sigma_y:float=None, sigma_x:float=None, dtype=tf.float32):
-    if sigma_x is None: sigma_x = M/3.0
-    if sigma_y is None: sigma_y = N/3.0
-    y = tf.range(N, dtype=dtype) - tf.cast(N//2, dtype)
-    x = tf.range(M, dtype=dtype) - tf.cast(M//2, dtype)
-    Y, X = tf.meshgrid(y, x, indexing='ij')
-    W = tf.exp(-0.5*(X**2)/(sigma_x**2) - 0.5*(Y**2)/(sigma_y**2))
-    return W  # (N,M)
-
-def _mat2gray_tf(x, mask=None):
-    if mask is not None:
-        x_masked = tf.boolean_mask(x, mask)
-        mn = tf.reduce_min(x_masked)
-        mx = tf.reduce_max(x_masked)
-    else:
-        mn = tf.reduce_min(x); mx = tf.reduce_max(x)
-    rng = tf.maximum(mx - mn, tf.cast(1e-12, x.dtype))
-    return (x - mn) / rng
-
 # -----------------------------
 # TF feature extractor (GPU)
 # -----------------------------

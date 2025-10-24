@@ -1,4 +1,13 @@
 
+"""
+# Inference helper for the training results of Train_TF_Regression_Multioutput
+Load trained model, scaler, and metadata to make predictions on new data.
+
+68 LENSPMD25 INFORME-OM4M007 medida spatial freqs using ML
+
+"""
+
+
 from pathlib import Path
 import pickle
 import json

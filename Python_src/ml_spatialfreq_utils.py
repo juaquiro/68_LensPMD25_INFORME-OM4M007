@@ -50,15 +50,6 @@ def expand_matrix_field(dict_rows: List[Dict], field_name: str) -> List[Dict]:
 # calcFeatureBatch (from calcFeatureBatch.asv) -- simplified but consistent
 # -----------------------------
 
-def _gaussian_window(N: int, M: int, sigma_y: float=None, sigma_x: float=None) -> np.ndarray:
-    if sigma_x is None: sigma_x = M/3.0
-    if sigma_y is None: sigma_y = N/3.0
-    y, x = np.mgrid[0:N, 0:M]
-    x = x - (M//2)
-    y = y - (N//2)
-    W = np.exp(-0.5*(x**2)/sigma_x**2 - 0.5*(y**2)/sigma_y**2)
-    return W
-
 def calc_feature_batch(B: np.ndarray, featureName: str = "feature_projected_DFT"):
     """
     Vectorized feature extractor for a stack of patches.
