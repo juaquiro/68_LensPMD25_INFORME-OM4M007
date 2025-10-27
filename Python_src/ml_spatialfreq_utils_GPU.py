@@ -153,12 +153,16 @@ def calc_spatial_freqs_supervised_regression_batch_gpu(
     Returns: (w_phi, phi_x, phi_y, theta, QM, M_proc, timings_dict if return_timing)
     """
     import time
+    timings = {}
 
     if M_ROI is None:
         M_ROI = np.ones_like(g, dtype=bool)
     M_ROI = M_ROI.astype(bool)
 
+    t00 = time.perf_counter()
     model, scaler, meta = trained_model.load()
+    timings["model_load"] = time.perf_counter() - t00
+
     N = trained_model.DB_info.patch_NR
     M = trained_model.DB_info.patch_NC
     r = N//2; c = M//2  # center offset
@@ -177,7 +181,6 @@ def calc_spatial_freqs_supervised_regression_batch_gpu(
         out = (nanmap, nanmap, nanmap, nanmap, np.zeros_like(g, np.float32), np.zeros_like(g, np.float32))
         return (*out, {"total": 0.0, "patch": 0.0, "feature": 0.0, "predict": 0.0}) if return_timing else out
 
-    timings = {}
 
     # Phase 1: Patch extraction (GPU via tf.image.extract_patches)
     t0 = time.perf_counter()

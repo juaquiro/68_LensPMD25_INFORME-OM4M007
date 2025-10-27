@@ -245,7 +245,7 @@ def calc_spatial_freqs_supervised_regression_batch(
     
 
     # Phase 2: Feature extraction (GPU)
-    t1 = time.perf_counter()
+    t0 = time.perf_counter()
     N = trained_model.DB_info.patch_NR
     M = trained_model.DB_info.patch_NC
     r = N//2; c = M//2  # center offset
@@ -278,7 +278,11 @@ def calc_spatial_freqs_supervised_regression_batch(
         i = ir[k]; j = jc[k]
         B[:,:,k] = g[i-r:i-r+N, j-c:j-c+M]
 
+    timings["patch"] = time.perf_counter() - t0
+
+    
     # Features
+    t1 = time.perf_counter()
     fname = feature_name if feature_name != "feature_normalized_DFT" else "feature_DFT"
     X, _S = calc_feature_batch(B, fname)
     
