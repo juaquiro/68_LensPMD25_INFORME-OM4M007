@@ -232,7 +232,7 @@ def calc_spatial_freqs_supervised_regression_batch(
 
 
     # Phase 1: load trained model 
-    t0 = time.perf_counter()
+    t00 = time.perf_counter()
 
     if M_ROI is None:
         M_ROI = np.ones_like(g, dtype=bool)
@@ -240,7 +240,7 @@ def calc_spatial_freqs_supervised_regression_batch(
 
     model, scaler, meta = trained_model.load()
     assert feature_name == trained_model.DB_info.featureName, "FeatureName does not match trained model"
-    timings["model_load"] = time.perf_counter() - t0
+    timings["model_load"] = time.perf_counter() - t00
 
     
 
@@ -307,7 +307,7 @@ def calc_spatial_freqs_supervised_regression_batch(
 
     timings["predict"] = time.perf_counter() - t2    
 
-    timings["total"] = timings["model_load"] + timings["feature"] + timings["predict"]
+    timings["total"] = timings["model_load"] + timings["patch"] + timings["feature"] + timings["predict"]
 
     # Map back to images
    # Initialize with NaNs (MATLAB: deal(nan(NR,NC)))

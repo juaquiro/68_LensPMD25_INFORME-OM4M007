@@ -289,7 +289,7 @@ def calc_spatial_freqs_supervised_regression_batch_gpu(
     
     QM = M_proc * (1.0 - diff01)
 
-    timings["total"] = timings["patch"] + timings["feature"] + timings["predict"]
+    timings["total"] = timings["model_load"] + timings["patch"] + timings["feature"] + timings["predict"]
 
     out = (w_phi, phi_x, phi_y, theta, QM.astype(np.float32), M_proc.astype(np.float32))
     return (*out, timings) if return_timing else out
